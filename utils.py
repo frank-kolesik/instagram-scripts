@@ -6,9 +6,14 @@ import json
 def get_function_name(): return inspect.stack()[1][3]
 
 
-def dump_json(data):
-    with open("tmp.json", "w") as f:
+def dump_json(data, path="tmp.json"):
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
+
+def load_json(path="tmp.json"):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def get_project_path(user_name):
@@ -33,19 +38,21 @@ def get_project_path(user_name):
 def filter_user_info(edges, check_private):
     return [
         {
-            'pk': edge['node']['id'],
+            'userid': edge['node']['id'],
             'username': edge['node']['username']
         } for edge in edges
         if not (check_private and edge['node']['is_private'])
     ]
 
 
-def filter_user_feed(edges):
+def filter_user_feed(edges, filter_not_liked=False):
     return [
         {
             "shortcode": edge["node"]["shortcode"],
             "mediaid": edge["node"]["id"],
         } for edge in edges
+        if filter_not_liked
+        and not edge["node"]["viewer_has_liked"]
     ]
 
 
