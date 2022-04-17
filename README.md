@@ -108,35 +108,35 @@ manipulate_user = manipulate({
 
 The parameters `limit` and `manipulate` are **optional**. The value of `limit` decides the maximum number of items to retrieve. If there are less items than the `limit`, all items get returned. The function `manipulate` can be used to extract only the wanted information from the resulting items.
 
-#### // user followings
+#### user followings
 
 - get_user_followings
 - get_self_user_followings
 - get_user_followings_v2
 - get_self_user_followings_v2
 
-#### // user followers
+#### user followers
 
 - get_user_followers
 - get_self_user_followers
 - get_user_followers_v2
 - get_self_user_followers_v2
 
-#### // media likes
+#### media likes
 
 - get_media_likes
 - get_media_likes_v2
 
-#### // media comments
+#### media comments
 
 - get_media_comments
 
-#### // timeline
+#### timeline
 
 - get_timeline
 - get_timeline_v2
 
-#### // user feed
+#### user feed
 
 - get_user_feed
 - get_self_user_feed
@@ -145,7 +145,7 @@ The parameters `limit` and `manipulate` are **optional**. The value of `limit` d
 - get_user_feed_v3
 - get_self_user_feed_v3
 
-#### // user tagged feed
+#### user tagged feed
 
 - get_user_tagged_feed
 - get_self_user_tagged_feed
