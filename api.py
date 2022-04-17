@@ -1,21 +1,15 @@
+import datetime
 import requests
 import pickle
-import os
-import datetime
-import re
 import random
 import time
-import json
+import os
+import re
 
 
 from utils import (
-    dump_json,
     get_project_path,
     get_function_name,
-    filter_user_info,
-    filter_hashtag_feed,
-    filter_hashtag_feed_v2,
-    filter_user_feed,
 )
 
 
@@ -31,15 +25,9 @@ class InstagramArray():
         for item in items:
             if item["layout_type"] != "media_grid" or item["feed_type"] != "media":
                 continue
-            result.extend(item["layout_content"]["medias"])
+            result.extend([media["media"]
+                          for media in item["layout_content"]["medias"]])
         return result
-
-    @staticmethod
-    def filter_private(items):
-        return [
-            item for item in items
-            if not item["is_private"]
-        ]
 
 
 class InstagramAPI():
@@ -48,7 +36,7 @@ class InstagramAPI():
     URL_BASE = "https://www.instagram.com/"
     URL_LOGIN = "https://www.instagram.com/accounts/login/ajax/"
     URL_LOGOUT = "https://www.instagram.com/accounts/logout/"
-    URL_API = "https://www.instagram.com/graphql/query/?query_hash=%s&variables=%s"
+    URL_API = "https://www.instagram.com/graphql/query/?query_hash=%s&%s"
     URL_API_v2 = "https://www.instagram.com/graphql/query/?query_id=%s&%s"
 
     # DATA URLS
@@ -62,19 +50,16 @@ class InstagramAPI():
     URL_LIKE = "https://www.instagram.com/web/likes/%s/like/"
     URL_UNLIKE = "https://www.instagram.com/web/likes/%s/unlike/"
     URL_COMMENT = "https://www.instagram.com/web/comments/%s/add/"
-    URL_UNCOMMENT = "https://www.instagram.com/web/comments/%s/delete/%s"
+    URL_UNCOMMENT = "https://www.instagram.com/web/comments/%s/delete/%s/"
+    URL_COMMENT_LIKE = "https://www.instagram.com/web/comments/like/%s/"
+    URL_COMMENT_UNLIKE = "https://www.instagram.com/web/comments/unlike/%s/"
     URL_FOLLOW = "https://www.instagram.com/web/friendships/%s/follow/"
     URL_UNFOLLOW = "https://www.instagram.com/web/friendships/%s/unfollow/"
     URL_REMOVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/remove_follower/"
     URL_BLOCK = "https://www.instagram.com/web/friendships/%s/block/"
     URL_UNBLOCK = "https://www.instagram.com/web/friendships/%s/unblock/"
-
-    # SETTINGS URLS
-    URL_EDIT_PROFILE_INFO = "https://www.instagram.com/accounts/edit/"
-    URL_EDIT_PROFILE_PIC = "https://www.instagram.com/accounts/web_change_profile_picture/"
-    URL_CHANGE_PASSWORD = "https://www.instagram.com/accounts/password/change/"
-    URL_SET_PRIVACY = "https://www.instagram.com/accounts/set_private/"
-    URL_SET_GENDER = "https://www.instagram.com/accounts/set_gender/"
+    URL_FOLLOW_TAG = "https://www.instagram.com/web/tags/follow/%s/"
+    URL_UNFOLLOW_TAG = "https://www.instagram.com/web/tags/unfollow/%s/"
 
     # VARIABLES
     HEADERS_WEB = {
@@ -175,7 +160,7 @@ class InstagramAPI():
             @return String | None
         '''
         query_hash = '6ff3f5c474a240353993056428fb851e'
-        query_vars = '&variables={"shortcode":"%s","include_reel":true}'
+        query_vars = 'variables={"shortcode":"%s","include_reel":true}'
         query_vars = query_vars % short_code
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -192,7 +177,7 @@ class InstagramAPI():
         '''
         query_hash = 'd4d88dc1500312af6f937f7b804c68c3'
         # c9100bf9110dd6361671f113dd02e7d6
-        query_vars = '&variables={"user_id":%s,"include_reel":true}'
+        query_vars = 'variables={"user_id":%s,"include_reel":true}'
         query_vars = query_vars % user_id
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -208,7 +193,7 @@ class InstagramAPI():
             @return String | None
         '''
         query_hash = '6ff3f5c474a240353993056428fb851e'
-        query_vars = '&variables={"shortcode":"%s","include_reel":true}'
+        query_vars = 'variables={"shortcode":"%s","include_reel":true}'
         query_vars = query_vars % short_code
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -218,6 +203,21 @@ class InstagramAPI():
             print(get_function_name(), e)
             return None
 
+    def _get_media_id_by_short_code(self, short_code):
+        '''
+            @param String short_code
+            @return String | None
+        '''
+        response = self._get_response(self.URL_MEDIA % short_code)
+        try:
+            media_id = response['items'][0]['id']
+            media_id = media_id.split("_")[0]
+            return media_id
+        except Exception as e:
+            print(get_function_name(), e)
+            return None
+
+    # DATA FUNCTIONS
     def _get_user_info_by_username(self, user_name):
         '''
             @param String user_name
@@ -255,20 +255,6 @@ class InstagramAPI():
             print(get_function_name(), e)
             return None
 
-    def _get_media_id_by_short_code(self, short_code):
-        '''
-            @param String short_code
-            @return String | None
-        '''
-        response = self._get_response(self.URL_MEDIA % short_code)
-        try:
-            media_id = response['items'][0]['id']
-            media_id = media_id.split("_")[0]
-            return media_id
-        except Exception as e:
-            print(get_function_name(), e)
-            return None
-
     def _get_user_followings_by_user_id(self, user_id, end_cursor=""):
         '''
             @param String user_id
@@ -276,7 +262,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = 'd04b0a864b4b54837c0d870b0e77e076'
-        query_vars = '&variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -298,7 +284,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = '17874545323001329'
-        query_vars = '&variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -322,7 +308,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = 'c76146de99bb02f6415203be841dd25a'
-        query_vars = '&variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -344,7 +330,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = '17851374694183129'
-        query_vars = '&variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -368,7 +354,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = 'd5d763b1e2acf209d62d22d184488e57'
-        query_vars = '&variables={"shortcode":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (short_code, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -390,7 +376,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = '17864450716183058'
-        query_vars = '&variables={"shortcode":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (short_code, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -414,7 +400,7 @@ class InstagramAPI():
             @return [ User[], String | None ]
         '''
         query_hash = '33ba35852cb50da46f5b5e889df7d159'
-        query_vars = '&variables={"shortcode":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (short_code, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -429,7 +415,7 @@ class InstagramAPI():
             print(get_function_name(), e)
             return [[], None]
 
-    def _get_timeline_feed(self, end_cursor=""):
+    def _get_timeline(self, end_cursor=""):
         '''
             @param String end_cursor
             @return [ Media[], String | None ]
@@ -448,7 +434,7 @@ class InstagramAPI():
             print(get_function_name(), e)
             return [[], None]
 
-    def _get_timeline_feed_v2(self, end_cursor=""):
+    def _get_timeline_v2(self, end_cursor=""):
         '''
             @param String end_cursor
             @return [ Media[], String | None ]
@@ -495,7 +481,8 @@ class InstagramAPI():
         # 003056d32c2554def87228bc3fd9668a
         # e769aa130647d2354c40ea6a439bfc08
         # 8c2a529969ee035a5063f2fc8602a0fd
-        query_vars = '&variables={"id":%s,"first":50,"after":"%s"}'
+        # 396983faee97f4b49ccbe105b4daf7a0
+        query_vars = 'variables={"id":%s,"first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -541,7 +528,7 @@ class InstagramAPI():
             @return [ Media[], String | None ]
         '''
         query_hash = 'be13233562af2d229b008d2976b998b5'
-        query_vars = '&variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
@@ -569,32 +556,43 @@ class InstagramAPI():
             print(get_function_name(), e)
             return []
 
-    def _get_top_hashtag_feed_by_tag_name_v2(self, tag_name):
+    def _get_top_hashtag_feed_by_tag_name_v2(self, tag_name, end_cursor=""):
         '''
             @param String tag_name
             @return Media[]
         '''
         query_hash = 'f92f56d47dc7a55b606908374b43a314'
-        query_vars = '&variables={"tag_name":"%s","first":9,"show_ranked":true}'
-        query_vars = query_vars % tag_name
+        query_vars = 'variables={"tag_name":"%s","first":50,"show_ranked":true,"after":"%s"}'
+        query_vars = query_vars % (tag_name, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
             response = response["data"]["hashtag"]
             edges = response["edge_hashtag_to_ranked_media"]["edges"]
-            return InstagramArray.filter(edges)
+            return InstagramArray.filter_nodes(edges)
         except Exception as e:
             print(get_function_name(), e)
             return []
 
     # USER DATA
     def get_user_id(self, user_name=None, short_code=None):
+        '''
+            @param String user_name
+            @param String short_code
+            @return String | None
+        '''
+        user_id = None
         if user_name:
-            return self._get_user_id_by_user_name(user_name)
-        elif short_code:
-            return self._get_user_id_by_short_code(short_code)
-        return None
+            user_id = self._get_user_id_by_user_name(user_name)
+        if not user_id and short_code:
+            user_id = self._get_user_id_by_short_code(short_code)
+        return user_id
 
     def get_user_name(self, user_id=None, short_code=None):
+        '''
+            @param String user_id
+            @param String short_code
+            @return String | None
+        '''
         user_name = None
         if user_id:
             user_name = self._get_user_name_by_user_id(user_id)
@@ -602,256 +600,585 @@ class InstagramAPI():
             user_name = self._get_user_name_by_short_code(short_code)
         return user_name
 
-    def get_user_info(self, user_id=None, user_name=None, short_code=None):
-        if not user_name:
-            user_name = self.get_user_name(user_id, short_code)
-        if user_name:
-            return self._get_user_info_by_username(user_name)
-        return None
+    # USER INFO
+    def get_user_info(self, user_name):
+        '''
+            @param String user_name
+            @return User | None
+        '''
+        return self._get_user_info_by_username(user_name)
+
+    def get_self_user_info(self):
+        '''
+            @return User | None
+        '''
+        return self.get_user_info(self.username)
 
     # USER FOLLOWINGS
-    def get_user_followings_new(self, user_id, limit=float('inf')):
+    def get_user_followings(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
         [items, end_cursor] = self._get_user_followings_by_user_id(user_id)
 
-        while end_cursor and len(items) < limit:
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching users: {number}', end='\r')
+
             time.sleep(random.randint(1, 2))
+
             [items_new, end_cursor] = self._get_user_followings_by_user_id(
                 user_id, end_cursor
             )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
             items.extend(items_new)
+            number = len(items)
 
-        return items[:min(limit, len(items))]
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning users: {number}')
+        return items[:number]
 
-    def _get_user_followings(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-
-        [items, end_cursor] = self._get_user_followings_by_user_id(user_id)
-        yield items
-
-        while end_cursor:
-            time.sleep(random.randint(1, 2))
-            [items, end_cursor] = self._get_user_followings_by_user_id(
-                user_id, end_cursor
-            )
-            yield items
-
-    def get_user_followings(self, user_id=None, user_name=None, filter_private=False, limit=float('inf')):
-        result = []
-        generator = self._get_user_followings(
-            user_id=user_id, user_name=user_name
-        )
-
-        for items in generator:
-            if filter_private:
-                items = InstagramArray.filter_private(items)
-            result.extend(items)
-            if len(result) >= limit:
-                break
-
-        return result[:min(limit, len(result))]
-
-    def get_self_user_followings(self, filter_private=False, limit=float('inf')):
+    def get_self_user_followings(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
         return self.get_user_followings(
             user_id=self.userid,
-            filter_private=filter_private,
-            limit=limit
+            limit=limit,
+            manipulate=manipulate,
+        )
+
+    def get_user_followings_v2(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
+        [items, end_cursor] = self._get_user_followings_by_user_id_v2(user_id)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching users: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_user_followings_by_user_id_v2(
+                user_id, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning users: {number}')
+        return items[:number]
+
+    def get_self_user_followings_v2(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
+        return self.get_user_followings_v2(
+            user_id=self.userid,
+            limit=limit,
+            manipulate=manipulate,
         )
 
     # USER FOLLOWERS
-    def get_user_followers_new(self, user_id, limit=float('inf')):
+    def get_user_followers(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
         [items, end_cursor] = self._get_user_followers_by_user_id(user_id)
 
-        while end_cursor and len(items) < limit:
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching users: {number}', end='\r')
+
             time.sleep(random.randint(1, 2))
+
             [items_new, end_cursor] = self._get_user_followers_by_user_id(
                 user_id, end_cursor
             )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
             items.extend(items_new)
+            number = len(items)
 
-        return items[:min(limit, len(items))]
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning users: {number}')
+        return items[:number]
 
-    def _get_user_followers(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-
-        [items, end_cursor] = self._get_user_followers_by_user_id(user_id)
-        yield items
-
-        while end_cursor:
-            time.sleep(random.randint(1, 2))
-            [items, end_cursor] = self._get_user_followers_by_user_id(
-                user_id, end_cursor
-            )
-            yield items
-
-    def get_user_followers(self, user_id=None, user_name=None, filter_private=False, limit=float('inf')):
-        result = []
-        generator = self._get_user_followers(
-            user_id=user_id, user_name=user_name
-        )
-
-        for items in generator:
-            if filter_private:
-                items = InstagramArray.filter_private(items)
-            result.extend(items)
-            if len(result) >= limit:
-                break
-
-        return result[:min(limit, len(result))]
-
-    def get_self_user_followers(self, filter_private=False, limit=float('inf')):
+    def get_self_user_followers(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
         return self.get_user_followers(
             user_id=self.userid,
-            filter_private=filter_private,
-            limit=limit
+            limit=limit,
+            manipulate=manipulate,
         )
 
-    # USER UNFOLLOWERS
-    def get_user_unfollowers(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-        users = self.get_user_followings_all(user_id)
-        fans = self.get_user_followers_all(user_id)
-        return [[user['username'], user['userid']] for user in users if user not in fans]
+    def get_user_followers_v2(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
+        [items, end_cursor] = self._get_user_followers_by_user_id_v2(user_id)
 
-    def get_self_user_unfollowers(self):
-        return self.get_user_unfollowers(user_id=self.userid)
+        if manipulate:
+            items = manipulate(items)
 
-    # MEDIA LIKERS
-    def _get_media_likes(self, short_code):
-        [items, end_cursor] = self._get_media_likes_by_short_code(short_code)
-        yield items
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching users: {number}', end='\r')
 
-        while end_cursor:
             time.sleep(random.randint(1, 2))
-            [items, end_cursor] = self._get_media_likes_by_short_code(
+
+            [items_new, end_cursor] = self._get_user_followers_by_user_id_v2(
+                user_id, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning users: {number}')
+        return items[:number]
+
+    def get_self_user_followers_v2(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return User[]
+        '''
+        return self.get_user_followers_v2(
+            user_id=self.userid,
+            limit=limit,
+            manipulate=manipulate,
+        )
+
+    # MEDIA LIKES
+    def get_media_likes(self, short_code, limit=float('inf'), manipulate=None):
+        '''
+            @param String short_code
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Like[]
+        '''
+        [items, end_cursor] = self._get_media_likes_by_short_code(short_code)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching likes: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_media_likes_by_short_code(
                 short_code, end_cursor
             )
-            yield items
 
-    def get_media_likes(self, short_code, filter_private=False, limit=float('inf')):
-        result = []
-        generator = self._get_media_likes(short_code)
+            if manipulate:
+                items_new = manipulate(items_new)
 
-        for items in generator:
-            if filter_private:
-                items = InstagramArray.filter_private(items)
-            result.extend(items)
-            if len(result) >= limit:
-                break
+            items.extend(items_new)
+            number = len(items)
 
-        return result[:min(limit, len(result))]
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning likes: {number}')
+        return items[:number]
+
+    def get_media_likes_v2(self, short_code, limit=float('inf'), manipulate=None):
+        '''
+            @param String short_code
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Like[]
+        '''
+        [items, end_cursor] = self._get_media_likes_by_short_code_v2(
+            short_code
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching likes: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_media_likes_by_short_code_v2(
+                short_code, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning likes: {number}')
+        return items[:number]
+
+    # MEDIA COMMENTS
+    def get_media_comments(self, short_code, limit=float('inf'), manipulate=None):
+        '''
+            @param String short_code
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Comment[]
+        '''
+        [items, end_cursor] = self._get_media_comments_by_short_code(
+            short_code
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching comments: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_media_comments_by_short_code(
+                short_code, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning comments: {number}')
+        return items[:number]
 
     # TIMELINE FEED
-    def _get_timeline(self):
-        [items, end_cursor] = self._get_timeline_feed()
-        yield items
+    def get_timeline(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_timeline()
 
-        while end_cursor:
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
             time.sleep(random.randint(1, 2))
-            [items, end_cursor] = self._get_timeline_feed(end_cursor)
-            yield items
 
-    def get_timeline(self, limit=float('inf')):
-        result = []
-        generator = self._get_timeline()
+            [items_new, end_cursor] = self._get_timeline(end_cursor)
 
-        for items in generator:
-            result.extend(items)
-            if len(result) >= limit:
-                break
+            if manipulate:
+                items_new = manipulate(items_new)
 
-        return result[:min(limit, len(result))]
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_timeline_v2(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_timeline_v2()
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_timeline_v2(end_cursor)
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
 
     # USER FEED
-    def _get_user_feed(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-
+    def get_user_feed(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
         [items, end_cursor] = self._get_user_feed_by_user_id(user_id)
-        yield items
 
-        while end_cursor:
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
             time.sleep(random.randint(1, 2))
+
             [items, end_cursor] = self._get_user_feed_by_user_id(
                 user_id, end_cursor
             )
-            yield items
 
-    def get_user_feed(self, user_id=None, user_name=None, limit=float('inf')):
-        result = []
-        generator = self._get_user_feed(
-            user_id=user_id, user_name=user_name
-        )
+            if manipulate:
+                items_new = manipulate(items_new)
 
-        for items in generator:
-            result.extend(items)
-            if len(result) >= limit:
-                break
+            items.extend(items_new)
+            number = len(items)
 
-        if not result:
-            # if not user_name:
-            #     user_name = self.get_user_name(user_id=user_id)
-            result = self._get_user_feed_by_user_name(user_name)
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
 
-        return result[:min(limit, len(result))]
-
-    def get_self_user_feed(self, limit=float('inf')):
+    def get_self_user_feed(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
         return self.get_user_feed(
             user_id=self.userid,
+            limit=limit,
+            manipulate=manipulate,
+        )
+
+    def get_user_feed_v2(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_user_feed_by_user_id_v2(user_id)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items, end_cursor] = self._get_user_feed_by_user_id_v2(
+                user_id, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_self_user_feed_v2(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        return self.get_user_feed_v2(
+            user_id=self.userid,
+            limit=limit,
+            manipulate=manipulate,
+        )
+
+    def get_user_feed_v3(self, user_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_user_feed_by_user_name(user_name)
+
+        if manipulate:
+            items = manipulate(items)
+
+        return items[:min(limit, len(items))]
+
+    def get_self_user_feed_v3(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        return self.get_user_feed_v3(
             user_name=self.username,
-            limit=limit
+            limit=limit,
+            manipulate=manipulate,
         )
 
     # TAGGED FEED
-    def get_user_tagged_feed(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-        [medias, _] = self._get_user_tagged_feed_by_user_id(user_id)
-        return medias
+    def get_user_tagged_feed(self, user_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_user_tagged_feed_by_user_id(user_id)
 
-    def get_self_user_tagged_feed(self):
-        return self.get_user_tagged_feed(user_id=self.userid)
+        if manipulate:
+            items = manipulate(items)
 
-    def get_user_tagged_feed_all(self, user_id=None, user_name=None):
-        if not user_id:
-            user_id = self._get_user_id_by_user_name(user_name)
-        [medias, end_cursor] = self._get_user_tagged_feed_by_user_id(user_id)
-        while end_cursor:
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
             time.sleep(random.randint(1, 2))
-            [medias_new, end_cursor] = self._get_user_tagged_feed_by_user_id(
+
+            [items, end_cursor] = self._get_user_tagged_feed_by_user_id(
                 user_id, end_cursor
             )
-            medias.extend(medias_new)
-        return medias
 
-    def get_self_user_tagged_feed_all(self):
-        return self.get_user_tagged_feed_all(user_id=self.userid)
+            if manipulate:
+                items_new = manipulate(items_new)
 
-    # HASHTAG FEED
-    def get_top_hashtag_feed(self, tag_name):
-        result = self._get_top_hashtag_feed_by_tag_name(tag_name)
-        if len(result):
-            return result
-        return self._get_top_hashtag_feed_by_tag_name_v2(tag_name)
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_self_user_tagged_feed(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        return self.get_user_tagged_feed(
+            user_id=self.userid,
+            limit=limit,
+            manipulate=manipulate,
+        )
 
     # TAKE ACTIONS
-    def like_media(self, media_id=None, short_code=None):
-        if not media_id:
-            media_id = self._get_media_id_by_short_code(short_code)
+    def like_media(self, media_id):
+        '''
+            @param String media_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_LIKE % media_id)
         return res.status_code == 200
 
-    def unlike_media(self, media_id=None, short_code=None):
-        if not media_id:
-            media_id = self._get_media_id_by_short_code(short_code)
+    def unlike_media(self, media_id):
+        '''
+            @param String media_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_UNLIKE % media_id)
         return res.status_code == 200
 
-    def comment_media(self, text, media_id=None, short_code=None, replied_to_comment_id=None):
-        if not media_id:
-            media_id = self._get_media_id_by_short_code(short_code)
+    def comment_media(self, text, media_id, replied_to_comment_id=None):
+        '''
+            @param String text
+            @param String media_id
+            @param String replied_to_comment_id
+            @return Boolean success
+        '''
         data = {
             'comment_text': text,
             'replied_to_comment_id': replied_to_comment_id,
@@ -859,54 +1186,67 @@ class InstagramAPI():
         res = self.s.post(self.URL_COMMENT % media_id, data=data)
         return res.status_code == 200
 
-    def uncomment_media(self, comment_id, media_id=None, short_code=None):
-        if not media_id:
-            media_id = self._get_media_id_by_short_code(short_code)
+    def uncomment_media(self, media_id, comment_id):
+        '''
+            @param String media_id
+            @param String comment_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_UNCOMMENT % (media_id, comment_id))
         return res.status_code == 200
 
-    def follow_user(self, user_id=None, user_name=None, short_code=None):
-        if not user_id:
-            user_id = self.get_user_id(user_name, short_code)
+    def follow_user(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_FOLLOW % user_id)
         return res.status_code == 200
 
-    def unfollow_user(self, user_id=None, user_name=None, short_code=None):
-        if not user_id:
-            user_id = self.get_user_id(user_name, short_code)
+    def unfollow_user(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_UNFOLLOW % user_id)
         return res.status_code == 200
 
-    def remove_follower(self, user_id=None, user_name=None, short_code=None):
-        if not user_id:
-            user_id = self.get_user_id(user_name, short_code)
+    def remove_follower(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_REMOVE_FOLLOWER % user_id)
         return res.status_code == 200
 
-    def block_user(self, user_id=None, user_name=None, short_code=None):
-        if not user_id:
-            user_id = self.get_user_id(user_name, short_code)
+    def block_user(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_BLOCK % user_id)
         return res.status_code == 200
 
-    def unblock_user(self, user_id=None, user_name=None, short_code=None):
-        if not user_id:
-            user_id = self.get_user_id(user_name, short_code)
+    def unblock_user(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
         res = self.s.post(self.URL_UNBLOCK % user_id)
         return res.status_code == 200
 
-    # ACCOUNT SETTINGS
-    def change_password(self, password):
-        time = int(datetime.datetime.now().timestamp())
-        data = {
-            "enc_old_password": f"#PWD_INSTAGRAM_BROWSER:0:{time}:{self.password}",
-            "enc_new_password1": f"#PWD_INSTAGRAM_BROWSER:0:{time}:{password}",
-            "enc_new_password2": f"#PWD_INSTAGRAM_BROWSER:0:{time}:{password}",
-        }
-        res = self.s.post(self.URL_CHANGE_PASSWORD, data=data)
+    def follow_tag(self, tag_name):
+        '''
+            @param String tag_name
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_FOLLOW_TAG % tag_name)
         return res.status_code == 200
 
-    def set_privacy(self, private):
-        data = {"is_private": private}
-        res = self.s.post(self.URL_SET_PRIVACY, data=data)
+    def unfollow_tag(self, tag_name):
+        '''
+            @param String tag_name
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_UNFOLLOW_TAG % tag_name)
         return res.status_code == 200
