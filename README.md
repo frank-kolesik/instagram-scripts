@@ -6,27 +6,31 @@ Download repo to your project directory.
 
 ### Initialization
 
-The `userid` can initially be an empty string and filled in afterwards.
-It is used in some functions to retrieve data about the logged in account.
-There is a function to get the `userid` called `get_user_id`.
-
-```json
-config = {
-    "userid": "ig_userid",
-    "username": "ig_username",
-    "password": "ig_password",
-}
-```
-
-This is the way to initialize the InstagramAPI. The parameter `force_login` is optional and can be used to relogin if there are cookies from a previous login because the cookies are automatically cached per account:
-
-`~/Documents/instagram-scripts/accounts/{ig_username}/web.cookies`
+This is the way to initialize the InstagramAPI.
 
 ```python
 from api import InstagramAPI
 
 api = InstagramAPI(config, force_login=False)
 ```
+
+The parameter `config` is required and has the following shape.
+
+The `userid` can initially be an empty string and filled in afterwards.
+It is used in some functions to retrieve data about the logged in account.
+There is a function to get the `userid` called `get_user_id`.
+
+```json
+{
+  "userid": "ig_userid",
+  "username": "ig_username",
+  "password": "ig_password"
+}
+```
+
+The parameter `force_login` is optional and can be used to relogin if there are cookies from a previous login because the cookies are automatically cached per account:
+
+`~/Documents/instagram-scripts/accounts/{ig_username}/web.cookies`
 
 ### User Data
 
