@@ -13,6 +13,56 @@ from utils import (
 )
 
 
+def manipulate(keys, predicate=None):
+    def keys_dict(items):
+        result = []
+
+        for item in items:
+            if predicate and not predicate(item):
+                continue
+
+            layer_1 = {}
+            for k, v in keys.items():
+                if isinstance(v, dict):
+                    if k not in item:
+                        continue
+
+                    layer_2 = {}
+                    for sub_k, sub_v in v.items():
+                        if sub_v not in item[k]:
+                            continue
+
+                        layer_2[sub_k] = item[k][sub_v]
+
+                    layer_1.update(layer_2)
+                else:
+                    if v not in item:
+                        continue
+                    layer_1[k] = item[v]
+
+            result.append(layer_1)
+
+        return result
+
+    def keys_list(items):
+        return [
+            {
+                k: item[k]
+                for k in keys
+                if k in item
+            } for item in items
+            if not predicate or predicate(item)
+        ]
+
+    if isinstance(keys, dict):
+        return keys_dict
+
+    if isinstance(keys, list):
+        return keys_list
+
+    return None
+
+
 class InstagramArray():
 
     @staticmethod
