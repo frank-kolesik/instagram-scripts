@@ -206,8 +206,8 @@ class InstagramAPI():
     URL_FOLLOW_TAG = "https://www.instagram.com/web/tags/follow/%s/"
     URL_UNFOLLOW_TAG = "https://www.instagram.com/web/tags/unfollow/%s/"
 
-    # URL_VIEW_STORY = "https://www.instagram.com/stories/reel/seen"
-    URL_VIEW_STORY = "https://i.instagram.com/api/v1/stories/reel/seen"
+    URL_VIEW_STORY = "https://www.instagram.com/stories/reel/seen"
+    # URL_VIEW_STORY = "https://i.instagram.com/api/v1/stories/reel/seen"
 
     # VARIABLES
     HEADERS_WEB = {
@@ -1969,6 +1969,7 @@ class InstagramAPI():
             data=data,
             headers=REQUEST_HEADERS
         )
+        print(res, res.status_code)
         return res.status_code == 200
 
     # DATA ANALYSIS
