@@ -2091,12 +2091,15 @@ class InstagramAPI():
             for item in items if item["caption"]
         ]
 
-        hashtags = set()
+        hashtags = {}
         for item in items:
-            tags = sre_compile.compile(r"#\w*").findall(item)
-            hashtags.update(tags)
+            tags = set(sre_compile.compile(r"#\w*").findall(item))
+            for tag in tags:
+                if tag not in hashtags:
+                    hashtags[tag] = 0
+                hashtags[tag] += 1
 
-        return sorted(hashtags)
+        return sorted(hashtags.items(), key=lambda x: x[1], reverse=True)
 
     def grab_self_user_hashtags(self, limit=float('inf')):
         '''
@@ -2131,12 +2134,15 @@ class InstagramAPI():
             for item in items if item["caption"]
         ]
 
-        hashtags = set()
+        hashtags = {}
         for item in items:
-            tags = sre_compile.compile(r"#\w*").findall(item)
-            hashtags.update(tags)
+            tags = set(sre_compile.compile(r"#\w*").findall(item))
+            for tag in tags:
+                if tag not in hashtags:
+                    hashtags[tag] = 0
+                hashtags[tag] += 1
 
-        return sorted(hashtags)
+        return sorted(hashtags.items(), key=lambda x: x[1], reverse=True)
 
     def grab_self_user_hashtags_v2(self, limit=float('inf')):
         '''
@@ -2171,12 +2177,15 @@ class InstagramAPI():
             for item in items if item["caption"]
         ]
 
-        hashtags = set()
+        hashtags = {}
         for item in items:
-            tags = sre_compile.compile(r"#\w*").findall(item)
-            hashtags.update(tags)
+            tags = set(sre_compile.compile(r"#\w*").findall(item))
+            for tag in tags:
+                if tag not in hashtags:
+                    hashtags[tag] = 0
+                hashtags[tag] += 1
 
-        return sorted(hashtags)
+        return sorted(hashtags.items(), key=lambda x: x[1], reverse=True)
 
     def grab_self_user_hashtags_v3(self, limit=float('inf')):
         '''
