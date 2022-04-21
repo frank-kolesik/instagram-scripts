@@ -1,3 +1,4 @@
+import sre_compile
 import datetime
 import requests
 import pickle
@@ -11,6 +12,65 @@ from utils import (
     get_project_path,
     get_function_name,
 )
+
+
+APP_VERSION = "136.0.0.34.124"
+VERSION_CODE = "208061712"
+
+USER_AGENT_BASE = (
+    "Instagram {app_version} "
+    "Android ({android_version}/{android_release}; "
+    "{dpi}; {resolution}; {manufacturer}; "
+    "{device}; {model}; {cpu}; en_US; {version_code})"
+)
+
+USER_AGENT = USER_AGENT_BASE.format(**{
+    "app_version": APP_VERSION,
+    "android_version": "28",
+    "android_release": "9.0",
+    "dpi": "640dpi",
+    "resolution": "1440x2560",
+    "manufacturer": "samsung",
+    "device": "SM-G965F",
+    "model": "star2qltecs",
+    "cpu": "samsungexynos9810",
+    "version_code": VERSION_CODE,
+})
+
+REQUEST_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "X-IG-App-Locale": "en_US",
+    "X-IG-Device-Locale": "en_US",
+    "X-IG-Mapped-Locale": "en_US",
+    "X-Pigeon-Session-Id": "d0a3c6b0-24fd-428c-9d20-624a839f7f08",
+    "X-Pigeon-Rawclienttime": str(round(time.time() * 1000)),
+    "X-IG-Connection-Speed": "-1kbps",
+    "X-IG-Bandwidth-Speed-KBPS": str(random.randint(7000, 10000)),
+    "X-IG-Bandwidth-TotalBytes-B": str(random.randint(500000, 900000)),
+    "X-IG-Bandwidth-TotalTime-MS": str(random.randint(50, 150)),
+    "X-IG-App-Startup-Country": "US",
+    "X-Bloks-Version-Id": "0a3ae4c88248863609c67e278f34af44673cff300bc76add965a9fb036bd3ca3",
+    # X-IG-WWW-Claim: hmac.AR1ETv6FsubYON5DwNj_0CLNmbW7hSNR1yIMeXuhHJORNxSt
+    "X-IG-WWW-Claim": "hmac.AR1ETv6FsubYON5DwNj_0CLNmbW7hSNR1yIMeXuhHJORN4n7",
+    "X-Bloks-Is-Layout-RTL": "false",
+    "X-Bloks-Enable-RenderCore": "false",
+    # TODO get the uuid from api_login here
+    # "X-IG-Device-ID": "{uuid}",
+    # TODO get the device_id from api_login here
+    # "X-IG-Android-ID": "{device_id}",
+    "X-IG-Connection-Type": "WIFI",
+    "X-IG-Capabilities": "3brTvwM=",
+    "X-IG-App-ID": "567067343352427",
+    "Accept-Language": "en-US",
+    # Can be get from a cookie, self.mid
+    # "X-MID": "{mid}",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "i.instagram.com",
+    "X-FB-HTTP-Engine": "Liger",
+    "Connection": "close",
+    "X-IG-Prefetch-Request": "foreground",
+}
 
 
 def manipulate(keys, predicate=None):
@@ -66,8 +126,8 @@ def manipulate(keys, predicate=None):
 class InstagramArray():
 
     @staticmethod
-    def filter_nodes(items):
-        return [item["node"] for item in items]
+    def filter_nodes(items, key="node"):
+        return [item[key] for item in items]
 
     @staticmethod
     def filter_nodes_v2(items):
@@ -75,8 +135,32 @@ class InstagramArray():
         for item in items:
             if item["layout_type"] != "media_grid" or item["feed_type"] != "media":
                 continue
-            result.extend([media["media"]
-                          for media in item["layout_content"]["medias"]])
+            media = item["layout_content"]["medias"]
+            tmp = InstagramArray.filter_nodes(media, "media")
+            result.extend(tmp)
+        return result
+
+    @staticmethod
+    def filter_nodes_activity(items):
+        result = []
+        for item in items:
+            item = item['node']
+            typename = re.search(
+                r'Graph(.*?)AggregatedStory',
+                item['__typename']
+            ).group(1)
+
+            tmp = {
+                'type': typename,
+                'userid': item['user']['id'],
+                'username': item['user']['username'],
+            }
+
+            if typename != 'Follow':
+                tmp['mediaid'] = item['media']['id']
+                tmp['shortcode'] = item['media']['shortcode']
+
+            result.append(tmp)
         return result
 
 
@@ -90,26 +174,40 @@ class InstagramAPI():
     URL_API_v2 = "https://www.instagram.com/graphql/query/?query_id=%s&%s"
 
     # DATA URLS
-    URL_ACTIVITY = "https://www.instagram.com/accounts/activity/?__a=1"
     URL_USER = "https://www.instagram.com/%s/?__a=1"
     URL_MEDIA = "https://www.instagram.com/p/%s/?__a=1"
     URL_TAG = "https://www.instagram.com/explore/tags/%s/?__a=1"
     URL_LOCATION = "https://www.instagram.com/explore/locations/%s/?__a=1"
 
+    URL_ACTIVITY = "https://www.instagram.com/accounts/activity/?__a=1"
+    URL_ACCESS_TOOL_BASE = "https://www.instagram.com/accounts/access_tool/%s?__a=1"
+    URL_ACCESS_TOOLS = URL_ACCESS_TOOL_BASE % ""
+    URL_OUTGOING_FOLLOW_REQUESTS = URL_ACCESS_TOOL_BASE % "current_follow_requests"
+    URL_INCOMING_USER_FOLLOWS = URL_ACCESS_TOOL_BASE % "accounts_following_you"
+    URL_OUTGOING_USER_FOLLOWS = URL_ACCESS_TOOL_BASE % "accounts_you_follow"
+    URL_OUTGOING_TAG_FOLLOWS = URL_ACCESS_TOOL_BASE % "hashtags_you_follow"
+    URL_OUTGOING_USER_BLOCKS = URL_ACCESS_TOOL_BASE % "accounts_you_blocked"
+    URL_OUTGOING_USER_HIDE_STORY = URL_ACCESS_TOOL_BASE % "accounts_you_hide_stories_from"
+    # pagination: &cursor=...
+
     # ACTION URLS
     URL_LIKE = "https://www.instagram.com/web/likes/%s/like/"
     URL_UNLIKE = "https://www.instagram.com/web/likes/%s/unlike/"
+    URL_LIKE_COMMENT = "https://www.instagram.com/web/comments/like/%s/"
+    URL_UNLIKE_COMMENT = "https://www.instagram.com/web/comments/unlike/%s/"
     URL_COMMENT = "https://www.instagram.com/web/comments/%s/add/"
     URL_UNCOMMENT = "https://www.instagram.com/web/comments/%s/delete/%s/"
-    URL_COMMENT_LIKE = "https://www.instagram.com/web/comments/like/%s/"
-    URL_COMMENT_UNLIKE = "https://www.instagram.com/web/comments/unlike/%s/"
     URL_FOLLOW = "https://www.instagram.com/web/friendships/%s/follow/"
     URL_UNFOLLOW = "https://www.instagram.com/web/friendships/%s/unfollow/"
+    URL_APPROVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/approve/"
     URL_REMOVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/remove_follower/"
     URL_BLOCK = "https://www.instagram.com/web/friendships/%s/block/"
     URL_UNBLOCK = "https://www.instagram.com/web/friendships/%s/unblock/"
     URL_FOLLOW_TAG = "https://www.instagram.com/web/tags/follow/%s/"
     URL_UNFOLLOW_TAG = "https://www.instagram.com/web/tags/unfollow/%s/"
+
+    # URL_VIEW_STORY = "https://www.instagram.com/stories/reel/seen"
+    URL_VIEW_STORY = "https://i.instagram.com/api/v1/stories/reel/seen"
 
     # VARIABLES
     HEADERS_WEB = {
@@ -180,7 +278,7 @@ class InstagramAPI():
             os.remove(self.cookies_web)
 
         self.s.post(self.URL_LOGOUT)
-        print("Logout URL_APId")
+        print("Logout succeeded")
 
     # HELPER FUNCTIONS
     def _get_response(self, link):
@@ -290,28 +388,50 @@ class InstagramAPI():
 
     def _get_user_account_activity(self):
         '''
-            @return Activity | None
+            @return Activity[]
         '''
         response = self._get_response(self.URL_ACTIVITY)
         try:
-            response = response['graphql']['user']
-            activity = response['activity_feed']['edge_web_activity_feed']["edges"]
-            requests = response["edge_follow_requests"]["edges"]
-            return {
-                'activity_feed': InstagramArray.filter_nodes(activity),
-                'follow_requests': InstagramArray.filter_nodes(requests),
-            }
+            response = response['graphql']['user']['activity_feed']['edge_web_activity_feed']
+            edges = response['edges']
+            return InstagramArray.filter_nodes_activity(edges)
         except Exception as e:
             print(get_function_name(), e)
-            return None
+            return []
+
+    def _get_incoming_follow_requests(self):
+        '''
+            @return String[]
+        '''
+        response = self._get_response(self.URL_ACTIVITY)
+        try:
+            response = response['graphql']['user']['edge_follow_requests']
+            edges = response['edges']
+            return InstagramArray.filter_nodes(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_outgoing_follow_requests(self):
+        '''
+            @return String[]
+        '''
+        response = self._get_response(self.URL_OUTGOING_FOLLOW_REQUESTS)
+        try:
+            response = response['data']['data']
+            return [item['text'] for item in response]
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
 
     def _get_user_followings_by_user_id(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ User[], String | None ]
         '''
         query_hash = 'd04b0a864b4b54837c0d870b0e77e076'
+        # 58712303d941c6855d4e888c5f0cd22f
         query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
@@ -330,11 +450,11 @@ class InstagramAPI():
     def _get_user_followings_by_user_id_v2(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ User[], String | None ]
         '''
         query_hash = '17874545323001329'
-        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'id=%s&first=50&after=%s'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -354,10 +474,11 @@ class InstagramAPI():
     def _get_user_followers_by_user_id(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ User[], String | None ]
         '''
         query_hash = 'c76146de99bb02f6415203be841dd25a'
+        # 37479f2b8209594dde7facb0d904896a
         query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
@@ -376,11 +497,11 @@ class InstagramAPI():
     def _get_user_followers_by_user_id_v2(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ User[], String | None ]
         '''
         query_hash = '17851374694183129'
-        query_vars = 'variables={"id":"%s","first":50,"after":"%s"}'
+        query_vars = 'id=%s&first=50&after=%s'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -400,8 +521,8 @@ class InstagramAPI():
     def _get_media_likes_by_short_code(self, short_code, end_cursor=""):
         '''
             @param String short_code
-            @param String end_cursor
-            @return [ User[], String | None ]
+            @param String end_cursor, optional
+            @return [ Like[], String | None ]
         '''
         query_hash = 'd5d763b1e2acf209d62d22d184488e57'
         query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
@@ -422,11 +543,11 @@ class InstagramAPI():
     def _get_media_likes_by_short_code_v2(self, short_code, end_cursor=""):
         '''
             @param String short_code
-            @param String end_cursor
-            @return [ User[], String | None ]
+            @param String end_cursor, optional
+            @return [ Like[], String | None ]
         '''
         query_hash = '17864450716183058'
-        query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
+        query_vars = 'shortcode=%s&first=50&after=%s'
         query_vars = query_vars % (short_code, end_cursor)
         response = self._get_response(
             self.URL_API_v2 % (query_hash, query_vars)
@@ -446,8 +567,8 @@ class InstagramAPI():
     def _get_media_comments_by_short_code(self, short_code, end_cursor=""):
         '''
             @param String short_code
-            @param String end_cursor
-            @return [ User[], String | None ]
+            @param String end_cursor, optional
+            @return [ Comment[], String | None ]
         '''
         query_hash = '33ba35852cb50da46f5b5e889df7d159'
         query_vars = 'variables={"shortcode":"%s","first":50,"after":"%s"}'
@@ -465,9 +586,33 @@ class InstagramAPI():
             print(get_function_name(), e)
             return [[], None]
 
+    def _get_media_comments_by_short_code_v2(self, short_code, end_cursor=""):
+        '''
+            @param String short_code
+            @param String end_cursor, optional
+            @return [ Comment[], String | None ]
+        '''
+        query_hash = '17852405266163336'
+        query_vars = 'shortcode=%s&first=50&after=%s'
+        query_vars = query_vars % (short_code, end_cursor)
+        response = self._get_response(
+            self.URL_API_v2 % (query_hash, query_vars)
+        )
+        try:
+            response = response['data']['shortcode_media']['edge_media_to_comment']
+            edges = response["edges"]
+            cursor = response["page_info"]
+
+            edges = InstagramArray.filter_nodes(edges)
+            end_cursor = cursor["end_cursor"] if cursor["has_next_page"] else None
+            return [edges, end_cursor]
+        except Exception as e:
+            print(get_function_name(), e)
+            return [[], None]
+
     def _get_timeline(self, end_cursor=""):
         '''
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ Media[], String | None ]
         '''
         query_hash = '3f01472fb28fb8aca9ad9dbc9d4578ff'
@@ -486,7 +631,7 @@ class InstagramAPI():
 
     def _get_timeline_v2(self, end_cursor=""):
         '''
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ Media[], String | None ]
         '''
         query_hash = '17861995474116400'
@@ -507,6 +652,67 @@ class InstagramAPI():
             print(get_function_name(), e)
             return [[], None]
 
+    def _get_post_suggestions(self, end_cursor=""):
+        '''
+            @param String end_cursor, optional
+            @return [ Media[], String | None ]
+        '''
+        query_hash = '17863787143139595'
+        query_vars = '&first=50&after=%s'
+        query_vars = query_vars % end_cursor
+        response = self._get_response(
+            self.URL_API_v2 % (query_hash, query_vars)
+        )
+        try:
+            response = response['data']['user']['edge_web_discover_media']
+            edges = response["edges"]
+            cursor = response["page_info"]
+
+            edges = InstagramArray.filter_nodes(edges)
+            end_cursor = cursor["end_cursor"] if cursor["has_next_page"] else None
+            return [edges, end_cursor]
+        except Exception as e:
+            print(get_function_name(), e)
+            return [[], None]
+
+    def _get_stories(self):
+        '''
+            @return Story[]
+        '''
+        query_hash = '04334405dbdef91f2c4e207b84c204d7'
+        query_vars = 'variables={"only_stories":true}'
+        response = self._get_response(self.URL_API % (query_hash, query_vars))
+        try:
+            response = response["data"]["user"]["feed_reels_tray"]["edge_reels_tray_to_reel"]
+            edges = response["edges"]
+            return InstagramArray.filter_nodes(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_user_stories(self, user_id):
+        '''
+            @param String[] | String user_id
+            @return Story[]
+        '''
+        if isinstance(user_id, list):
+            user_id = '","'.join(user_id)
+        query_hash = 'cda12de4f7fd3719c0569ce03589f4c4'
+        query_vars = (
+            'variables={"reel_ids":["%s"],"tag_names":[],"location_ids":[],"highlight_reel_ids":[],'
+            # '"show_story_viewer_list":true,"story_viewer_fetch_count":50,"story_viewer_cursor":"",'
+            '"precomposed_overlay":false}'
+        )
+        query_vars = query_vars % user_id
+        response = self._get_response(self.URL_API % (query_hash, query_vars))
+        try:
+            response = response["data"]
+            edges = response["reels_media"]
+            return edges
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
     def _get_user_feed_by_user_name(self, user_name):
         '''
             @param String user_name
@@ -524,7 +730,7 @@ class InstagramAPI():
     def _get_user_feed_by_user_id(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ Media[], String | None ]
         '''
         query_hash = 'e7e2f4da4b02303f74f0841279e52d76'
@@ -532,6 +738,8 @@ class InstagramAPI():
         # e769aa130647d2354c40ea6a439bfc08
         # 8c2a529969ee035a5063f2fc8602a0fd
         # 396983faee97f4b49ccbe105b4daf7a0
+        # 42323d64886122307be10013ad2dcc44
+        # 472f257a40c653c64c666ce877d59d2b
         query_vars = 'variables={"id":%s,"first":50,"after":"%s"}'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
@@ -550,10 +758,11 @@ class InstagramAPI():
     def _get_user_feed_by_user_id_v2(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ Media[], String | None ]
         '''
         query_hash = '17880160963012870'
+        # 17888483320059182
         query_vars = 'id=%s&first=50&after=%s'
         query_vars = query_vars % (user_id, end_cursor)
         response = self._get_response(
@@ -574,7 +783,7 @@ class InstagramAPI():
     def _get_user_tagged_feed_by_user_id(self, user_id, end_cursor=""):
         '''
             @param String user_id
-            @param String end_cursor
+            @param String end_cursor, optional
             @return [ Media[], String | None ]
         '''
         query_hash = 'be13233562af2d229b008d2976b998b5'
@@ -598,6 +807,42 @@ class InstagramAPI():
             @param String tag_name
             @return Media[]
         '''
+        query_hash = 'f92f56d47dc7a55b606908374b43a314'
+        query_vars = 'variables={"tag_name":"%s","first":50}'
+        query_vars = query_vars % tag_name
+        response = self._get_response(self.URL_API % (query_hash, query_vars))
+        try:
+            response = response["data"]["hashtag"]["edge_hashtag_to_top_posts"]
+            edges = response["edges"]
+            return InstagramArray.filter_nodes(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_top_hashtag_feed_by_tag_name_v2(self, tag_name):
+        '''
+            @param String tag_name
+            @return Media[]
+        '''
+        query_hash = '17875800862117404'
+        query_vars = 'tag_name=%s&first=50'
+        query_vars = query_vars % tag_name
+        response = self._get_response(
+            self.URL_API_v2 % (query_hash, query_vars)
+        )
+        try:
+            response = response['data']['hashtag']['edge_hashtag_to_top_posts']
+            edges = response["edges"]
+            return InstagramArray.filter_nodes(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_top_hashtag_feed_by_tag_name_v3(self, tag_name):
+        '''
+            @param String tag_name
+            @return Media[]
+        '''
         response = self._get_response(self.URL_TAG % tag_name)
         try:
             edges = response["data"]["top"]["sections"]
@@ -606,19 +851,109 @@ class InstagramAPI():
             print(get_function_name(), e)
             return []
 
-    def _get_top_hashtag_feed_by_tag_name_v2(self, tag_name, end_cursor=""):
+    def _get_ranked_hashtag_feed_by_tag_name(self, tag_name, end_cursor=""):
         '''
             @param String tag_name
-            @return Media[]
+            @param String end_cursor, optional
+            @return [ Media[], String | None ]
         '''
         query_hash = 'f92f56d47dc7a55b606908374b43a314'
         query_vars = 'variables={"tag_name":"%s","first":50,"show_ranked":true,"after":"%s"}'
         query_vars = query_vars % (tag_name, end_cursor)
         response = self._get_response(self.URL_API % (query_hash, query_vars))
         try:
-            response = response["data"]["hashtag"]
-            edges = response["edge_hashtag_to_ranked_media"]["edges"]
-            return InstagramArray.filter_nodes(edges)
+            response = response["data"]["hashtag"]["edge_hashtag_to_ranked_media"]
+            edges = response["edges"]
+            cursor = response["page_info"]
+
+            edges = InstagramArray.filter_nodes(edges)
+            end_cursor = cursor["end_cursor"] if cursor["has_next_page"] else None
+            return [edges, end_cursor]
+        except Exception as e:
+            print(get_function_name(), e)
+            return [[], None]
+
+    def _get_recent_hashtag_feed_by_tag_name(self, tag_name, end_cursor=""):
+        '''
+            @param String tag_name
+            @param String end_cursor, optional
+            @return [ Media[], String | None ]
+        '''
+        query_hash = 'f92f56d47dc7a55b606908374b43a314'
+        query_vars = 'variables={"tag_name":"%s","first":50,"after":"%s"}'
+        query_vars = query_vars % (tag_name, end_cursor)
+        response = self._get_response(self.URL_API % (query_hash, query_vars))
+        try:
+            response = response["data"]["hashtag"]["edge_hashtag_to_media"]
+            edges = response["edges"]
+            cursor = response["page_info"]
+
+            edges = InstagramArray.filter_nodes(edges)
+            end_cursor = cursor["end_cursor"] if cursor["has_next_page"] else None
+            return [edges, end_cursor]
+        except Exception as e:
+            print(get_function_name(), e)
+            return [[], None]
+
+    def _get_recent_hashtag_feed_by_tag_name_v2(self, tag_name, end_cursor=""):
+        '''
+            @param String tag_name
+            @param String end_cursor, optional
+            @return [ Media[], String | None ]
+        '''
+        query_hash = '17875800862117404'
+        query_vars = 'tag_name=%s&first=50&after=%s'
+        query_vars = query_vars % (tag_name, end_cursor)
+        response = self._get_response(
+            self.URL_API_v2 % (query_hash, query_vars)
+        )
+        try:
+            response = response['data']['hashtag']['edge_hashtag_to_media']
+            edges = response["edges"]
+            cursor = response["page_info"]
+
+            edges = InstagramArray.filter_nodes(edges)
+            end_cursor = cursor["end_cursor"] if cursor["has_next_page"] else None
+            return [edges, end_cursor]
+        except Exception as e:
+            print(get_function_name(), e)
+            return [[], None]
+
+    def _get_recent_hashtag_feed_by_tag_name_v3(self, tag_name):
+        '''
+            @param String tag_name
+            @return Media[]
+        '''
+        response = self._get_response(self.URL_TAG % tag_name)
+        try:
+            edges = response["data"]["recent"]["sections"]
+            return InstagramArray.filter_nodes_v2(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_ranked_location_feed_by_location_id(self, location_id):
+        '''
+            @param String location_id
+            @return Media[]
+        '''
+        response = self._get_response(self.URL_LOCATION % location_id)
+        try:
+            edges = response["native_location_data"]["ranked"]["sections"]
+            return InstagramArray.filter_nodes_v2(edges)
+        except Exception as e:
+            print(get_function_name(), e)
+            return []
+
+    def _get_recent_location_feed_by_location_id(self, location_id):
+        '''
+            @param String location_id
+            @return Media[]
+        '''
+        response = self._get_response(self.URL_LOCATION % location_id)
+        try:
+            edges = response["native_location_data"]["recent"]["sections"]
+            return InstagramArray.filter_nodes_v2(edges)
         except Exception as e:
             print(get_function_name(), e)
             return []
@@ -635,6 +970,7 @@ class InstagramAPI():
             user_id = self._get_user_id_by_user_name(user_name)
         if not user_id and short_code:
             user_id = self._get_user_id_by_short_code(short_code)
+        print(f'[{get_function_name()}] returning user_id: {user_id}')
         return user_id
 
     def get_user_name(self, user_id=None, short_code=None):
@@ -648,6 +984,7 @@ class InstagramAPI():
             user_name = self._get_user_name_by_user_id(user_id)
         if not user_name and short_code:
             user_name = self._get_user_name_by_short_code(short_code)
+        print(f'[{get_function_name()}] returning user_name: {user_name}')
         return user_name
 
     # USER INFO
@@ -656,6 +993,7 @@ class InstagramAPI():
             @param String user_name
             @return User | None
         '''
+        print(f'[{get_function_name()}] returning user_info: {user_name}')
         return self._get_user_info_by_username(user_name)
 
     def get_self_user_info(self):
@@ -966,6 +1304,42 @@ class InstagramAPI():
         print(f'[{get_function_name()}] returning comments: {number}')
         return items[:number]
 
+    def get_media_comments_v2(self, short_code, limit=float('inf'), manipulate=None):
+        '''
+            @param String short_code
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Comment[]
+        '''
+        [items, end_cursor] = self._get_media_comments_by_short_code_v2(
+            short_code
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching comments: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_media_comments_by_short_code_v2(
+                short_code, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning comments: {number}')
+        return items[:number]
+
     # TIMELINE FEED
     def get_timeline(self, limit=float('inf'), manipulate=None):
         '''
@@ -1018,6 +1392,37 @@ class InstagramAPI():
             time.sleep(random.randint(1, 2))
 
             [items_new, end_cursor] = self._get_timeline_v2(end_cursor)
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_post_suggestions(self, limit=float('inf'), manipulate=None):
+        '''
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_post_suggestions()
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items_new, end_cursor] = self._get_post_suggestions(end_cursor)
 
             if manipulate:
                 items_new = manipulate(items_new)
@@ -1140,7 +1545,9 @@ class InstagramAPI():
         if manipulate:
             items = manipulate(items)
 
-        return items[:min(limit, len(items))]
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
 
     def get_self_user_feed_v3(self, limit=float('inf'), manipulate=None):
         '''
@@ -1205,6 +1612,224 @@ class InstagramAPI():
             manipulate=manipulate,
         )
 
+    # HASHTAG FEED
+    def get_top_hashtag_feed(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_top_hashtag_feed_by_tag_name(tag_name)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_top_hashtag_feed_v2(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_top_hashtag_feed_by_tag_name_v2(tag_name)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_top_hashtag_feed_v3(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_top_hashtag_feed_by_tag_name_v3(tag_name)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_ranked_hashtag_feed(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_ranked_hashtag_feed_by_tag_name(
+            tag_name
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items, end_cursor] = self._get_ranked_hashtag_feed_by_tag_name(
+                tag_name, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_recent_hashtag_feed(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_recent_hashtag_feed_by_tag_name(
+            tag_name
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items, end_cursor] = self._get_recent_hashtag_feed_by_tag_name(
+                tag_name, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_recent_hashtag_feed_v2(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        [items, end_cursor] = self._get_recent_hashtag_feed_by_tag_name_v2(
+            tag_name
+        )
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = len(items)
+        while end_cursor and number < limit:
+            print(f'[{get_function_name()}] fetching medias: {number}', end='\r')
+
+            time.sleep(random.randint(1, 2))
+
+            [items, end_cursor] = self._get_recent_hashtag_feed_by_tag_name_v2(
+                tag_name, end_cursor
+            )
+
+            if manipulate:
+                items_new = manipulate(items_new)
+
+            items.extend(items_new)
+            number = len(items)
+
+        number = min(limit, number)
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_recent_hashtag_feed_v3(self, tag_name, limit=float('inf'), manipulate=None):
+        '''
+            @param String tag_name
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_recent_hashtag_feed_by_tag_name_v3(tag_name)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    # LOCATION FEED
+    def get_ranked_location_feed(self, location_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String location_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_ranked_location_feed_by_location_id(location_id)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
+    def get_recent_location_feed(self, location_id, limit=float('inf'), manipulate=None):
+        '''
+            @param String location_id
+            @param Integer limit, optional
+            :maximum number of items to retrieve
+            @param Function manipulate, optional
+            :function to manipulate items
+            @return Media[]
+        '''
+        items = self._get_recent_location_feed_by_location_id(location_id)
+
+        if manipulate:
+            items = manipulate(items)
+
+        number = min(limit, len(items))
+        print(f'[{get_function_name()}] returning medias: {number}')
+        return items[:number]
+
     # TAKE ACTIONS
     def like_media(self, media_id):
         '''
@@ -1220,6 +1845,22 @@ class InstagramAPI():
             @return Boolean success
         '''
         res = self.s.post(self.URL_UNLIKE % media_id)
+        return res.status_code == 200
+
+    def like_comment(self, comment_id):
+        '''
+            @param String comment_id
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_LIKE_COMMENT % comment_id)
+        return res.status_code == 200
+
+    def unlike_comment(self, comment_id):
+        '''
+            @param String comment_id
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_UNLIKE_COMMENT % comment_id)
         return res.status_code == 200
 
     def comment_media(self, text, media_id, replied_to_comment_id=None):
@@ -1261,6 +1902,14 @@ class InstagramAPI():
         res = self.s.post(self.URL_UNFOLLOW % user_id)
         return res.status_code == 200
 
+    def approve_follower(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_APPROVE_FOLLOWER % user_id)
+        return res.status_code == 200
+
     def remove_follower(self, user_id):
         '''
             @param String user_id
@@ -1300,3 +1949,238 @@ class InstagramAPI():
         '''
         res = self.s.post(self.URL_UNFOLLOW_TAG % tag_name)
         return res.status_code == 200
+
+    def view_story(self, media_id, owner_id, taken_at_timestamp):
+        '''
+            @param String media_id
+            @param String owner_id
+            @param String taken_at_timestamp
+            @return Boolean success
+        '''
+        data = {
+            "reelMediaId": media_id,
+            "reelMediaOwnerId": owner_id,
+            "reelId": owner_id,
+            "reelMediaTakenAt": taken_at_timestamp,
+            "viewSeenAt": taken_at_timestamp,
+        }
+        res = self.s.post(
+            self.URL_VIEW_STORY,
+            data=data,
+            headers=REQUEST_HEADERS
+        )
+        return res.status_code == 200
+
+    # DATA ANALYSIS
+    def grab_user_nonfollowers(self, user_id):
+        '''
+            @param String user_id
+            @return User[]
+        '''
+        manipulate_user = manipulate({
+            'userid': 'id',
+            'username': 'username',
+        })
+
+        all_following = self.get_user_followings(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+        all_followers = self.get_user_followers(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+
+        nonfollowers = [
+            user for user in all_following if user not in all_followers
+        ]
+
+        return nonfollowers
+
+    def grab_self_user_nonfollowers(self):
+        '''
+            @return User[]
+        '''
+        return self.grab_user_nonfollowers(self.userid)
+
+    def grab_user_fans(self, user_id):
+        '''
+            @param String user_id
+            @return User[]
+        '''
+        manipulate_user = manipulate({
+            'userid': 'id',
+            'username': 'username',
+        })
+
+        all_following = self.get_user_followings(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+        all_followers = self.get_user_followers(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+
+        fans = [
+            user for user in all_followers if user not in all_following
+        ]
+
+        return fans
+
+    def grab_self_user_fans(self):
+        '''
+            @return User[]
+        '''
+        return self.grab_user_fans(self.userid)
+
+    def grab_user_mutual_following(self, user_id):
+        '''
+            @param String user_id
+            @return User[]
+        '''
+        manipulate_user = manipulate({
+            'userid': 'id',
+            'username': 'username',
+        })
+
+        all_following = self.get_user_followings(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+        all_followers = self.get_user_followers(
+            user_id=user_id,
+            manipulate=manipulate_user
+        )
+
+        fans = [
+            user for user in all_followers if user in all_following
+        ]
+
+        return fans
+
+    def grab_self_user_mutual_following(self):
+        '''
+            @return User[]
+        '''
+        return self.grab_user_mutual_following(self.userid)
+
+    def grab_user_hashtags(self, user_id, limit=float('inf')):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        manipulate_item = manipulate({
+            'edge_media_to_caption': {
+                'caption': 'edges',
+            },
+        })
+
+        items = self.get_user_feed(
+            user_id=user_id,
+            limit=limit,
+            manipulate=manipulate_item
+        )
+        items = items[:min(limit, len(items))]
+
+        items = [
+            item["caption"][0]["node"]["text"]
+            for item in items if item["caption"]
+        ]
+
+        hashtags = set()
+        for item in items:
+            tags = sre_compile.compile(r"#\w*").findall(item)
+            hashtags.update(tags)
+
+        return sorted(hashtags)
+
+    def grab_self_user_hashtags(self, limit=float('inf')):
+        '''
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        return self.grab_user_hashtags(self.userid, limit)
+
+    def grab_user_hashtags_v2(self, user_id, limit=float('inf')):
+        '''
+            @param String user_id
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        manipulate_item = manipulate({
+            'edge_media_to_caption': {
+                'caption': 'edges',
+            },
+        })
+
+        items = self.get_user_feed_v2(
+            user_id=user_id,
+            limit=limit,
+            manipulate=manipulate_item
+        )
+        items = items[:min(limit, len(items))]
+
+        items = [
+            item["caption"][0]["node"]["text"]
+            for item in items if item["caption"]
+        ]
+
+        hashtags = set()
+        for item in items:
+            tags = sre_compile.compile(r"#\w*").findall(item)
+            hashtags.update(tags)
+
+        return sorted(hashtags)
+
+    def grab_self_user_hashtags_v2(self, limit=float('inf')):
+        '''
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        return self.grab_user_hashtags_v2(self.userid, limit)
+
+    def grab_user_hashtags_v3(self, user_name, limit=float('inf')):
+        '''
+            @param String user_name
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        manipulate_item = manipulate({
+            'edge_media_to_caption': {
+                'caption': 'edges',
+            },
+        })
+
+        items = self.get_user_feed_v3(
+            user_name=user_name,
+            limit=limit,
+            manipulate=manipulate_item
+        )
+        items = items[:min(limit, len(items))]
+
+        items = [
+            item["caption"][0]["node"]["text"]
+            for item in items if item["caption"]
+        ]
+
+        hashtags = set()
+        for item in items:
+            tags = sre_compile.compile(r"#\w*").findall(item)
+            hashtags.update(tags)
+
+        return sorted(hashtags)
+
+    def grab_self_user_hashtags_v3(self, limit=float('inf')):
+        '''
+            @param Integer limit, optional
+            :maximum number of posts to analyse
+            @return String[]
+        '''
+        return self.grab_user_hashtags_v3(self.username, limit)
