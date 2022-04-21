@@ -1951,17 +1951,17 @@ class InstagramAPI():
         res = self.s.post(self.URL_UNFOLLOW_TAG % tag_name)
         return res.status_code == 200
 
-    def view_story(self, media_id, owner_id, taken_at_timestamp):
+    def view_story(self, media_id, user_id, taken_at_timestamp):
         '''
             @param String media_id
-            @param String owner_id
+            @param String user_id
             @param Integer taken_at_timestamp
             @return Boolean success
         '''
         data = {
             "reelMediaId": media_id,
-            "reelMediaOwnerId": owner_id,
-            "reelId": owner_id,
+            "reelMediaOwnerId": user_id,
+            "reelId": user_id,
             "reelMediaTakenAt": taken_at_timestamp,
             "viewSeenAt": taken_at_timestamp,
         }
