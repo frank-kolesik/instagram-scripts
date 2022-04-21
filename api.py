@@ -1,3 +1,4 @@
+import math
 import sre_compile
 import datetime
 import requests
@@ -206,8 +207,8 @@ class InstagramAPI():
     URL_FOLLOW_TAG = "https://www.instagram.com/web/tags/follow/%s/"
     URL_UNFOLLOW_TAG = "https://www.instagram.com/web/tags/unfollow/%s/"
 
-    URL_VIEW_STORY = "https://www.instagram.com/stories/reel/seen"
-    # URL_VIEW_STORY = "https://i.instagram.com/api/v1/stories/reel/seen"
+    # URL_VIEW_STORY = "https://www.instagram.com/stories/reel/seen"
+    URL_VIEW_STORY = "https://i.instagram.com/api/v1/stories/reel/seen"
 
     # VARIABLES
     HEADERS_WEB = {
@@ -1954,7 +1955,7 @@ class InstagramAPI():
         '''
             @param String media_id
             @param String owner_id
-            @param String taken_at_timestamp
+            @param Integer taken_at_timestamp
             @return Boolean success
         '''
         data = {
@@ -1969,7 +1970,6 @@ class InstagramAPI():
             data=data,
             headers=REQUEST_HEADERS
         )
-        print(res, res.status_code)
         return res.status_code == 200
 
     # DATA ANALYSIS
