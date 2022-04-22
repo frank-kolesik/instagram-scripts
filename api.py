@@ -200,8 +200,9 @@ class InstagramAPI():
     URL_UNCOMMENT = "https://www.instagram.com/web/comments/%s/delete/%s/"
     URL_FOLLOW = "https://www.instagram.com/web/friendships/%s/follow/"
     URL_UNFOLLOW = "https://www.instagram.com/web/friendships/%s/unfollow/"
-    URL_APPROVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/approve/"
     URL_REMOVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/remove_follower/"
+    URL_APPROVE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/approve/"
+    URL_IGNORE_FOLLOWER = "https://www.instagram.com/web/friendships/%s/ignore/"
     URL_BLOCK = "https://www.instagram.com/web/friendships/%s/block/"
     URL_UNBLOCK = "https://www.instagram.com/web/friendships/%s/unblock/"
     URL_FOLLOW_TAG = "https://www.instagram.com/web/tags/follow/%s/"
@@ -1903,6 +1904,14 @@ class InstagramAPI():
         res = self.s.post(self.URL_UNFOLLOW % user_id)
         return res.status_code == 200
 
+    def remove_follower(self, user_id):
+        '''
+            @param String user_id
+            @return Boolean success
+        '''
+        res = self.s.post(self.URL_REMOVE_FOLLOWER % user_id)
+        return res.status_code == 200
+
     def approve_follower(self, user_id):
         '''
             @param String user_id
@@ -1911,12 +1920,12 @@ class InstagramAPI():
         res = self.s.post(self.URL_APPROVE_FOLLOWER % user_id)
         return res.status_code == 200
 
-    def remove_follower(self, user_id):
+    def ignore_follower(self, user_id):
         '''
             @param String user_id
             @return Boolean success
         '''
-        res = self.s.post(self.URL_REMOVE_FOLLOWER % user_id)
+        res = self.s.post(self.URL_IGNORE_FOLLOWER % user_id)
         return res.status_code == 200
 
     def block_user(self, user_id):
